@@ -366,11 +366,46 @@ const fullFailureEnvelope = (
   if (offset === 0 && end >= total) return { ok: false, error: failure, meta };
   const actualEnd = Math.min(end, total);
   const nextOffset = actualEnd < total ? actualEnd : undefined;
+  const sliced = sliceUnicodeSafe(sliceByTokens(formatted, offset, end), 0, formatted.length);
   return {
     ok: false,
-    error: `${sliceByTokens(formatted, offset, end)}\n[truncated: showing tokens ${offset}–${actualEnd} of ${total}]`,
+    error: `${sliced}\n[truncated: showing tokens ${offset}–${actualEnd} of ${total}]`,
     meta: { ...meta, ...(nextOffset === undefined ? {} : { nextOffset }) },
   };
+};
+
+/** Formats complex JavaScript objects and nested properties recursively for markdown output. */
+export const formatMarkdownValue = (value: unknown, indent = 0): string => {
+  if (value === null || value === undefined) return "*none*";
+  if (typeof value !== "object") return String(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "*none*";
+    return value
+      .map((item) => `${" ".repeat(indent)}- ${formatMarkdownValue(item, indent + 2)}`)
+      .join("\n");
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return "*none*";
+  return entries
+    .map(
+      ([k, v]) =>
+        `${" ".repeat(indent)}- **${k}**: ${
+          typeof v === "object" && v !== null
+            ? "\n" + formatMarkdownValue(v, indent + 2)
+            : String(v)
+        }`,
+    )
+    .join("\n");
+};
+
+/** Slices a string safely without splitting Unicode surrogate pairs or grapheme clusters. */
+export const sliceUnicodeSafe = (text: string, start: number, end: number): string => {
+  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    const segmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+    const segments = Array.from(segmenter.segment(text), (s) => s.segment);
+    return segments.slice(start, end).join("");
+  }
+  return Array.from(text).slice(start, end).join("");
 };
 
 /** Filter.apply owns these mapped arrays; an empty path list returns the source. */
